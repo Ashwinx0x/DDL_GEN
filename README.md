@@ -1,2 +1,0 @@
-# DDL_GEN
-DDL_GEN
