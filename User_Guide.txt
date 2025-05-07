@@ -1,0 +1,19 @@
+User Guide: DK View Generation and Automation Process
+
+1. As a prerequisite, all relevant details of PII views must be stored in a metadata table. This ensures all input parameters are maintained in one central location, and the status of each procedure run is appropriately tracked.
+
+2. A stored procedure has been developed to generate a DK (Derived Key) column corresponding to the PII ID column, in alignment with the standard format defined in the view’s DDL.
+
+3. In the event of a runtime error, the error will be captured and logged in a dedicated ERROR table. This table will store the corresponding DDL structure along with the error details, enabling manual investigation and resolution using the available context.
+
+4. During runtime, both the current production (PROD) DDL and the DK-generated DDL are saved to an INVENTORY table. These records serve as inputs for a shell script designed to generate SQL files formatted according to LLQ standards.
+
+5. A shell script has been implemented to automate the generation of SQL files. Each file includes:
+
+   * The DK-generated DDL as the COMMIT block
+   * The existing PROD DDL as the ROLLBACK block
+   * Associated GRANT statements
+
+6. This automated approach significantly reduces the manual effort required to create SQL files containing DK-generated DDL, improving efficiency and consistency.
+
+7. After SQL file generation, the DK-generated View DDL must be manually validated in each environment. Minimal manual adjustments may be required to comply with LLQ standards due to limitations of the shell script (e.g., removing double quotes, reviewing GRANT statements, etc.).
