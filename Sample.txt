@@ -93,3 +93,4 @@ After completing the above steps, document the following in the Jira or team tra
 
 This final documentation ensures transparency and traceability of the testing process.
 
+The test cases outlined here represent the most common validations we follow. However, they are not exhaustive. If a Jira story requires additional checks, we will include them as needed and perform further validations based on the specific nature of the story.
