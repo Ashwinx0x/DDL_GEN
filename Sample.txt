@@ -1,0 +1,95 @@
+# **Validation Checklist and Testing Guidelines for ELT Jira Tasks**
+
+This document provides a detailed step-by-step checklist that must be followed by every team member when working on an assigned Jira related to ELT workflows. The intention is to ensure consistent validation, testing accuracy, and alignment between Pre-PROD and PROD environments. Each step outlined below is mandatory unless otherwise specified.
+
+---
+
+## **1. Collection of Required Details Before Starting Work**
+
+When a Jira is assigned, the first step is to gather all essential details related to the workflow and tables involved. The team member must collect and document the following:
+
+* The target table name and all associated source table names.
+* The workflow name, control job name, 51\_C job name, and the exact command required to run these jobs.
+* Confirmation on whether a date table entry is required for the load.
+* Any additional metadata or supporting table details specific to the workflow.
+
+This step ensures that all dependencies are identified in advance, avoiding delays during development and testing.
+
+---
+
+## **2. Development and Unit Testing (DEV Environment)**
+
+Once the required information is gathered, changes must be implemented in the DEV environment. After implementation, perform Unit Testing (UT) to validate whether the new logic or modification works as intended. The unit testing should cover:
+
+* Execution of the workflow in DEV.
+* Verification of data transformations, mapping logic, and load behavior.
+* Checking that the expected data changes are reflected correctly in the DEV target table.
+
+Only after successful unit testing, the code can be promoted to the Pre-PROD environment for further validation.
+
+---
+
+## **3. Pre-PROD Preparation and Testing**
+
+In Pre-PROD, the testing process simulates PROD as closely as possible to validate the correctness of changes. This requires preparation of source and target data.
+
+* Perform **Data Copy Utility (DCU)** for all source tables to replicate PROD data into Pre-PROD.
+* In some scenarios, a **Slowly Changing Dimension (SCD) revert** must be performed on the source tables to mimic the historical load scenario that occurred on the specific day being tested.
+* Additionally, perform **SCD revert on the target table** for `order_date - 1`. This is a key step for simulating PROD behavior. It allows the Pre-PROD load to be validated against PROD in what we call a **Prod Parallel Run**.
+
+This ensures the test reflects the exact load sequence and data conditions that occur in production.
+
+---
+
+## **4. Date Table Entry Setup**
+
+Before running the workflow in Pre-PROD, make the required date table entry. Specifically, create an entry for **order\_date - 1** with the process indicator set to **‘Y’**.
+This ensures the load process correctly identifies the batch date for processing and aligns with the PROD parallel run setup.
+
+---
+
+## **5. Workflow Execution**
+
+Run the workflow in Pre-PROD using the collected job details and commands. During execution:
+
+* Monitor the workflow to ensure there are no unexpected failures.
+* If errors occur, capture the logs and troubleshoot immediately.
+* Validate that the workflow completes successfully before moving to the validation phase.
+
+---
+
+## **6. Post-Execution Validation**
+
+Once the workflow execution is successful, perform a comprehensive validation to ensure the correctness of the data load. The following checks must be performed in detail:
+
+1. **Batch Date Validation**
+   Confirm that the batch date value has been loaded correctly as `DW_EFF_DT` in the target table.
+
+2. **Data Comparison Between Pre-PROD and PROD**
+   Execute an **EXCEPT DISTINCT** query between Pre-PROD and PROD target tables, excluding metadata columns such as `DW_LOAD_TS`, `DW_CREATE_TS`, or any columns directly impacted by the introduced changes.
+
+   * The purpose of this check is to ensure that all other columns match exactly between Pre-PROD and PROD, proving that the changes have not unintentionally impacted unrelated data.
+
+3. **Verification of Introduced Changes**
+   Check specifically whether the changes implemented in the Jira are reflected correctly in the target table. Only the intended columns should show differences between Pre-PROD and PROD.
+
+4. **Backup of Source and Target Tables**
+   Take a backup of both the target table and the associated source tables used in the workflow. This serves as a reference point and allows rollback or re-validation if required.
+
+5. **Sample Record Comparison**
+   Pick a sample `ID` column value and compare it between Pre-PROD and PROD. Confirm that only the modified column(s) have new or updated values, while all other column data remains unchanged compared to PROD. This sample validation helps demonstrate the correctness of the change in a tangible way.
+
+---
+
+## **7. Conclusion and Documentation**
+
+After completing the above steps, document the following in the Jira or team tracker:
+
+* Summary of changes validated.
+* Results of the EXCEPT DISTINCT comparison.
+* Screenshots or SQL outputs for sample record validation.
+* Confirmation that backups were taken.
+* Any observations or discrepancies found during testing.
+
+This final documentation ensures transparency and traceability of the testing process.
+
