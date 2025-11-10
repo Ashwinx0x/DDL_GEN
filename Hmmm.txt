@@ -1,2 +1,0 @@
-Though we had a few challenges during deployment, we’ve taken them as valuable learnings. We appreciate the team’s dedication and steady progress with Jira closures, and we’ll continue refining our approach to deliver better outcomes ahead. We’ll take these learnings from the deployment phase to further enhance our performance moving forward.
-Kindly review the details shared below and let us know if you require any additional information.
