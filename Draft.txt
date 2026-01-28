@@ -1,0 +1,10 @@
+As I will be transitioning back to the team after being away for some time, I wanted to connect with you to request a knowledge transfer to help me align with the current way of working and ongoing activities.
+It would be greatly appreciated if you could support me with the following details:
+Any changes to the work model, processes, or operating procedures since I was last part of the team
+The current categories of tasks and responsibilities the team is handling
+The active and upcoming JIRA stories that I may be expected to take over, particularly if any existing team member is transitioning out
+Access to relevant KT documents, Confluence pages, runbooks, or reference materials
+Information on any trackers, dashboards, or reports currently maintained by the team
+Any other important updates, dependencies, or context about the team that would help me ramp up effectively
+Additionally, please let me know if there are any tools, systems, environments, or access requests I should initiate in advance to avoid onboarding delays.
+If convenient, I would appreciate the opportunity to schedule a brief KT session or walkthrough at a time that works best for you.
