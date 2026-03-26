@@ -1,0 +1,23 @@
+Irebal 3 table per person
+Siva 
+Viswa 
+Dhananjay
+
+Mayank (BANK ALS)
+LQB rollback and new PR (upgrade Changeset ID)
+
+Imtiaz - 
+1) taskflow name check should be as per naming standards and change if required and taskflow deployment till PP
+2) CTM Dev folder changes for date variable by checking FDR and FDR template 
+3) change the sudo command to incorporate these variables in job as well as the FDR sheet
+Ie; sudo in FDR sheet has old date variables so new CTM date variables should be called in cmd and same changes will have to be done in the dev jobs and FDR template
+
+Note: Naming convention shared for the job 100 series I.e old job qrg*014 then new is qrg*114
+
+Bank ALS
+Shalini 
+Ashwin 
+1)DDL compare with INTG (in PR)and OSI table (OSI TBL available in shared excel from Prashant)
+
+2)A-B and B-A for data comparisons on current prd final load table and corresponding OSI table 
+If data matches then no changes needed in transformations
