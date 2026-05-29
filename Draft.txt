@@ -1,4 +1,4 @@
-Hi @⁨‎all⁩ please find below points discussed 
+⁩ please find below points discussed 
 
 GL_AACT_DK 
 For now please proceed with existing master child entry which we made as part of our development - migrate your code and test it with a prd file (DCU) once everything is good with test run proceed with Historic load 
