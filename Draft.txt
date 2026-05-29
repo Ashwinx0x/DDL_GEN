@@ -1,10 +1,15 @@
-As I will be transitioning back to the team after being away for some time, I wanted to connect with you to request a knowledge transfer to help me align with the current way of working and ongoing activities.
-It would be greatly appreciated if you could support me with the following details:
-Any changes to the work model, processes, or operating procedures since I was last part of the team
-The current categories of tasks and responsibilities the team is handling
-The active and upcoming JIRA stories that I may be expected to take over, particularly if any existing team member is transitioning out
-Access to relevant KT documents, Confluence pages, runbooks, or reference materials
-Information on any trackers, dashboards, or reports currently maintained by the team
-Any other important updates, dependencies, or context about the team that would help me ramp up effectively
-Additionally, please let me know if there are any tools, systems, environments, or access requests I should initiate in advance to avoid onboarding delays.
-If convenient, I would appreciate the opportunity to schedule a brief KT session or walkthrough at a time that works best for you.
+Hi @⁨‎all⁩ please find below points discussed 
+
+GL_AACT_DK 
+For now please proceed with existing master child entry which we made as part of our development - migrate your code and test it with a prd file (DCU) once everything is good with test run proceed with Historic load 
+
+SWB_SEC_DK 
+Use the existing master available in prod currently. We are not gonna use SOR for this from ITEM_ISS_T. 
+
+PRE-PROD testing 
+Once your code is migrated to PP
+Please test it with a prod file.
+Once CTM jobs are available in SIT please test through CTM and during this test please involve your legacy jobs also during your E2E run 
+
+Control M 
+Delete the ITEM_ISS_ID SOR job from FDR doc and also from  DEV CTM and ask DBS to move it to SIT
