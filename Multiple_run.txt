@@ -1,0 +1,595 @@
+Here is the corrected and updated prompt with the **Control-M short job name clarification** included. I have removed the incorrect assumption that `ABCD123` is an IICS workflow name.
+
+You can copy this entire prompt and use it with an AI coding assistant.
+
+---
+
+# Project Prompt: Control-M Job Trigger Automation Using Python and Configuration Files
+
+## Project Objective
+
+I want to automate the manual process of triggering Control-M jobs that internally trigger IICS workflows.
+
+Currently, I manually login to a Linux server using PuTTY, execute multiple `pmrun` commands one by one, and provide my password whenever prompted.
+
+The goal is to build a Python-based automation utility where:
+
+* I provide a list of Control-M short job names and execution dates through an input file.
+* I provide my password securely at runtime.
+* Python automatically generates and executes required `pmrun` commands.
+* All Control-M jobs should be triggered in parallel from a single execution.
+* Execution details should be logged for tracking and troubleshooting.
+
+---
+
+# Current Manual Process
+
+## Step 1: Login to Server
+
+I manually login using PuTTY.
+
+Authentication details:
+
+* AD username
+* Hostname
+* Server password
+
+There are three environments:
+
+1. DEV
+2. PRE-PRD
+3. PRD
+
+Each environment has:
+
+* Different server.
+* Different trigger script path.
+* Separate deployment location for Python files and configuration files.
+
+---
+
+## Step 2: Execute Control-M Trigger Command
+
+After logging into the required server, I manually execute commands like:
+
+```bash
+pmrun -u /path/iics_wf_trigger.sh ABCD123 2026-07-11
+```
+
+Command explanation:
+
+```
+pmrun
+    |
+    |-- Control-M command used to trigger a job
+
+-u /path/iics_wf_trigger.sh
+    |
+    |-- IICS workflow trigger shell script
+
+ABCD123
+    |
+    |-- Control-M short job name
+
+2026-07-11
+    |
+    |-- Execution/business date
+```
+
+Important:
+
+`ABCD123` is a **Control-M short job name**, not an IICS workflow name.
+
+Python does not need to know the actual IICS workflow details. It only needs to trigger Control-M jobs.
+
+---
+
+## Step 3: Password Authentication
+
+After executing each `pmrun` command, the system prompts for my password.
+
+Requirements:
+
+* Password validity is one day.
+* I should provide the password during runtime.
+* Password should not be stored permanently.
+* Password should not be written into logs.
+* Password should only exist in memory during execution.
+
+Example:
+
+```
+Enter Password:
+********
+```
+
+---
+
+# Automation Architecture
+
+The final execution flow should be:
+
+```
+User Login Through PuTTY Manually
+
+        |
+        |
+
+Run Python Script
+
+        |
+        |
+
+Enter Password
+
+        |
+        |
+
+Python Reads Configuration File
+
+        |
+        |
+
+Python Reads Control-M Job Input File
+
+        |
+        |
+
+Generates pmrun Commands
+
+        |
+        |
+
+Executes All Commands In Parallel
+
+        |
+        |
+
+Generates Execution Report
+```
+
+---
+
+# Important Design Decision
+
+Python should NOT automate PuTTY login.
+
+PuTTY authentication remains manual.
+
+Python starts execution only after the user is already logged into the Linux server.
+
+---
+
+# Configuration File Requirement
+
+Create an environment configuration file using YAML.
+
+File:
+
+```
+config.yaml
+```
+
+The configuration file should contain only environment-specific details.
+
+Example:
+
+```yaml
+environment: DEV
+
+trigger_script_path: /apps/dev/iics_wf_trigger.sh
+
+command_template: "pmrun -u {script_path} {controlm_job_name} {execution_date}"
+```
+
+---
+
+## Environment Examples
+
+### DEV
+
+```yaml
+environment: DEV
+
+trigger_script_path: /apps/dev/iics_wf_trigger.sh
+```
+
+### PRE-PRD
+
+```yaml
+environment: PREPRD
+
+trigger_script_path: /apps/preprd/iics_wf_trigger.sh
+```
+
+### PRD
+
+```yaml
+environment: PRD
+
+trigger_script_path: /apps/prd/iics_wf_trigger.sh
+```
+
+The Python code should remain identical across all environments.
+
+Only configuration should change.
+
+---
+
+# Control-M Job Input File Requirement
+
+Daily job execution details should come from a separate CSV file.
+
+File:
+
+```
+jobs.csv
+```
+
+Example:
+
+```csv
+controlm_job_name,execution_date
+ABCD123,2026-07-11
+XYZ001,2026-07-10
+CUSTOMER_LOAD_JOB,2026-07-09
+ACCOUNT_LOAD_JOB,2026-07-01
+```
+
+Explanation:
+
+* `controlm_job_name` = Control-M short job name passed to pmrun.
+* `execution_date` = Date argument passed to pmrun.
+
+Requirements:
+
+* Support any number of jobs.
+* Support different dates for each job.
+* User should only update this file daily.
+* No Python code changes should be required.
+
+---
+
+# Parallel Execution Requirement
+
+This is the most important requirement.
+
+If there are 40 Control-M jobs:
+
+Example:
+
+```
+JOB001
+JOB002
+JOB003
+...
+JOB040
+```
+
+All jobs should be triggered simultaneously.
+
+Do NOT execute sequentially.
+
+Incorrect:
+
+```
+JOB001
+(wait)
+
+JOB002
+(wait)
+
+JOB003
+```
+
+Required:
+
+```
+JOB001 ─┐
+JOB002 ─┤
+JOB003 ─┤
+JOB004 ─┤
+JOB005 ─┘
+
+All triggered together
+```
+
+Requirements:
+
+* No hardcoded parallel limit.
+* No maximum job restriction.
+* Assume server has capacity to execute multiple jobs.
+* Use Python concurrency mechanisms.
+
+---
+
+# Command Generation Logic
+
+Python should:
+
+1. Read `config.yaml`.
+2. Read `jobs.csv`.
+3. Generate commands dynamically.
+
+Example:
+
+Input:
+
+```
+Control-M Job:
+ABCD123
+
+Date:
+2026-07-11
+```
+
+Generated command:
+
+```bash
+pmrun -u /apps/dev/iics_wf_trigger.sh ABCD123 2026-07-11
+```
+
+The command should never be hardcoded.
+
+---
+
+# Logging Requirement
+
+Create execution logs.
+
+Folder:
+
+```
+logs/
+```
+
+Example:
+
+```
+logs/execution_20260711.log
+```
+
+The log should contain:
+
+* Execution start time.
+* Control-M job name.
+* Generated command (without password).
+* Start status.
+* Completion status.
+* Error details if failed.
+
+Example:
+
+```
+Execution Started:
+2026-07-11 10:00:00
+
+
+Control-M Job:
+ABCD123
+
+Status:
+SUCCESS
+
+
+Control-M Job:
+XYZ001
+
+Status:
+FAILED
+
+
+Execution Summary:
+
+Total Jobs: 40
+
+Successful: 39
+
+Failed: 1
+```
+
+---
+
+# Error Handling Requirements
+
+The application should handle:
+
+* Missing config file.
+* Missing jobs.csv.
+* Empty job list.
+* Invalid date format.
+* Command execution failure.
+* Authentication failure.
+* Unexpected exceptions.
+
+If one job fails:
+
+* Log the failure.
+* Continue executing remaining jobs.
+* Provide final summary.
+
+---
+
+# Project Structure
+
+Create the project using:
+
+```
+controlm_automation/
+
+│
+├── workflow_runner.py
+│
+├── config.yaml
+│
+├── jobs.csv
+│
+├── logger.py
+│
+├── requirements.txt
+│
+├── README.md
+│
+└── logs/
+```
+
+---
+
+# File Responsibilities
+
+## workflow_runner.py
+
+Main execution script.
+
+Responsibilities:
+
+* Load configuration.
+* Read Control-M jobs.
+* Ask password securely.
+* Build pmrun commands.
+* Execute commands in parallel.
+* Display final execution summary.
+
+---
+
+## config.yaml
+
+Contains:
+
+* Environment name.
+* Trigger script path.
+* Command template.
+
+---
+
+## jobs.csv
+
+Contains:
+
+* Control-M short job names.
+* Execution dates.
+
+---
+
+## logger.py
+
+Handles:
+
+* Timestamp logging.
+* Success/failure tracking.
+* Log file creation.
+
+---
+
+## requirements.txt
+
+Contains required Python libraries.
+
+Example:
+
+```
+PyYAML
+```
+
+---
+
+# Development Approach
+
+Build the project step-by-step.
+
+## Phase 1: Basic Framework
+
+Implement:
+
+* Project structure.
+* Reading YAML configuration.
+* Reading CSV input.
+* Generate and display commands only.
+
+Do not execute commands initially.
+
+---
+
+## Phase 2: Command Execution
+
+Implement:
+
+* Secure password input.
+* Execute one pmrun command.
+* Handle command responses.
+
+---
+
+## Phase 3: Multiple Job Execution
+
+Implement:
+
+* Reading multiple Control-M jobs.
+* Parallel execution.
+* Exception handling.
+
+---
+
+## Phase 4: Production Features
+
+Implement:
+
+* Logging.
+* Execution summary.
+* Documentation.
+* Clean code structure.
+
+---
+
+# Coding Standards
+
+Follow these rules:
+
+* Write clean and readable Python.
+* Explain the code before providing it.
+* Add comments for important sections.
+* Use functions and modular design.
+* Avoid hardcoding values.
+* Keep environment details in configuration.
+* Keep job details in CSV.
+* Never store passwords.
+* Follow production-quality practices.
+
+---
+
+# Expected Final Usage
+
+After deployment:
+
+I login through PuTTY.
+
+Then execute:
+
+```bash
+python workflow_runner.py
+```
+
+Python prompts:
+
+```
+Enter Password:
+```
+
+I enter:
+
+```
+********
+```
+
+Python automatically:
+
+1. Reads environment configuration.
+2. Reads Control-M job list.
+3. Creates pmrun commands.
+4. Executes all jobs simultaneously.
+5. Creates logs.
+6. Displays final success/failure summary.
+
+---
+
+**Before generating final code, first explain the architecture, flow, and implementation approach. Then provide code file-by-file with explanations. Do not provide only code without explaining each component.**
