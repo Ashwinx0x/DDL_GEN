@@ -1,3 +1,520 @@
-This is to bring into your kind attention that I'm planning to take leave from 24th August to 4th September (10 working days). It's been quite a while since I last visited home, so I'm planning to spend some quality time with my family.
-Sharing this well in advance so we can plan accordingly. I'll ensure everything on my end is wrapped up or handed over before I leave.
-Looking forward to your approval. Thank you!
+Below is a complete project prompt you can reuse with any AI coding assistant to generate the code. I have included all the decisions, requirements, assumptions, constraints, and development steps we agreed upon.
+
+You can copy this entire prompt.
+
+---
+
+# Project Prompt: IICS Workflow Trigger Automation Using Python and Configuration Files
+
+## Project Objective
+
+I want to automate the manual process of triggering multiple IICS workflows through Control-M server commands.
+
+Currently, I manually login to a Linux server using PuTTY, execute multiple `pmrun` commands one by one, and provide my password whenever prompted.
+
+The goal is to build a Python-based automation utility where:
+
+* I provide a list of workflows and execution dates through an input file.
+* I provide my password securely at runtime.
+* Python automatically generates and executes all required `pmrun` commands.
+* All workflows should trigger in parallel from a single execution.
+* Execution details should be logged for tracking and troubleshooting.
+
+---
+
+# Current Manual Process
+
+## Step 1
+
+I login to a server using PuTTY.
+
+Authentication details:
+
+* AD username
+* Hostname
+* Server password
+
+There are three environments:
+
+1. DEV
+2. PRE-PRD
+3. PRD
+
+Each environment has a different server and different paths.
+
+---
+
+## Step 2
+
+After login, I manually execute commands like:
+
+Example:
+
+```bash
+pmrun -u /path/iics_wf_trigger.sh ABCD123 2026-07-11
+```
+
+Where:
+
+* `/path/iics_wf_trigger.sh` = IICS trigger shell script path
+* `ABCD123` = workflow/job name
+* `2026-07-11` = workflow execution date
+
+The actual command format should be configurable.
+
+---
+
+## Step 3
+
+After executing the command, the system prompts me for my IICS password.
+
+The password:
+
+* Is valid for one day.
+* Should be provided during runtime.
+* Should not be stored anywhere permanently.
+
+---
+
+# Automation Requirements
+
+## 1. Python should NOT automate PuTTY login
+
+Important:
+
+PuTTY login will remain manual.
+
+The Python script will execute only after I am already logged into the required Linux server.
+
+Flow:
+
+```
+Login through PuTTY manually
+
+        ↓
+
+Run Python script
+
+        ↓
+
+Enter IICS password
+
+        ↓
+
+Python triggers workflows
+```
+
+---
+
+# 2. Configuration File Requirement
+
+Create a configuration file to store environment-specific details.
+
+Use YAML format.
+
+Example:
+
+`config.yaml`
+
+```yaml
+environment: DEV
+
+trigger_script_path: /apps/dev/iics_wf_trigger.sh
+
+command_template: "pmrun -u {script_path} {workflow_name} {execution_date}"
+```
+
+For different environments, only configuration changes.
+
+Example:
+
+DEV:
+
+```yaml
+environment: DEV
+trigger_script_path: /apps/dev/iics_wf_trigger.sh
+```
+
+PRE-PRD:
+
+```yaml
+environment: PREPRD
+trigger_script_path: /apps/preprd/iics_wf_trigger.sh
+```
+
+PRD:
+
+```yaml
+environment: PRD
+trigger_script_path: /apps/prd/iics_wf_trigger.sh
+```
+
+The Python code should remain the same across environments.
+
+---
+
+# 3. Input File Requirement
+
+Daily workflow execution details should come from a separate input file.
+
+Use CSV format.
+
+File:
+
+```
+jobs.csv
+```
+
+Example:
+
+```csv
+workflow_name,execution_date
+ABCD123,2026-07-11
+XYZ001,2026-07-10
+CUSTOMER_LOAD,2026-07-09
+ACCOUNT_LOAD,2026-07-01
+```
+
+Requirements:
+
+* Support any number of workflows.
+* Each workflow can have a different execution date.
+* User should only modify this file daily.
+* Python code should not require changes.
+
+---
+
+# 4. Password Handling
+
+The Python script must request the password at runtime.
+
+Example:
+
+```
+Enter IICS Password:
+```
+
+Use secure input.
+
+Requirements:
+
+* Password should not be displayed while typing.
+* Password should not be stored.
+* Password should not appear in logs.
+* Password should only exist in memory during execution.
+
+Use Python secure password input methods.
+
+---
+
+# 5. Parallel Execution Requirement
+
+This is the most important requirement.
+
+If there are 40 workflows:
+
+Example:
+
+```
+JOB001
+JOB002
+JOB003
+...
+JOB040
+```
+
+All should start together.
+
+Do NOT execute sequentially.
+
+Avoid:
+
+```
+JOB001
+(wait)
+JOB002
+(wait)
+JOB003
+```
+
+Required:
+
+```
+JOB001  ─┐
+JOB002  ─┤
+JOB003  ─┤
+JOB004  ─┤── Execute simultaneously
+JOB005  ─┘
+```
+
+There should be:
+
+* No hardcoded parallel limit.
+* No restriction like maximum 5 or 10 jobs.
+* Assume server can handle multiple workflows.
+
+Use Python concurrency libraries.
+
+---
+
+# 6. Command Execution
+
+The Python program should:
+
+1. Read environment details from `config.yaml`.
+2. Read workflow details from `jobs.csv`.
+3. Generate commands dynamically.
+
+Example generated command:
+
+```bash
+pmrun -u /apps/dev/iics_wf_trigger.sh ABCD123 2026-07-11
+```
+
+4. Execute all commands.
+
+---
+
+# 7. Logging Requirement
+
+Create detailed execution logs.
+
+Folder:
+
+```
+logs/
+```
+
+Example:
+
+```
+logs/execution_20260711.log
+```
+
+Log should contain:
+
+* Execution start time.
+* Workflow name.
+* Generated command (without password).
+* Execution status.
+* Success/failure information.
+* Completion time.
+
+Example:
+
+```
+Execution Started:
+2026-07-11 10:00:00
+
+
+Workflow:
+ABCD123
+
+Status:
+SUCCESS
+
+
+Workflow:
+XYZ001
+
+Status:
+FAILED
+
+
+Summary:
+
+Total Jobs: 40
+Successful: 39
+Failed: 1
+```
+
+---
+
+# 8. Error Handling
+
+The script should handle:
+
+* Missing config file.
+* Missing jobs.csv.
+* Empty workflow list.
+* Invalid date format.
+* Command execution failure.
+* Unexpected runtime errors.
+
+The script should continue executing remaining workflows even if one workflow fails.
+
+---
+
+# 9. Project Structure
+
+Create the project using this structure:
+
+```
+iics_workflow_automation/
+
+│
+├── workflow_runner.py
+│
+├── config.yaml
+│
+├── jobs.csv
+│
+├── logger.py
+│
+├── requirements.txt
+│
+├── README.md
+│
+└── logs/
+```
+
+---
+
+# File Responsibilities
+
+## workflow_runner.py
+
+Main execution file.
+
+Responsibilities:
+
+* Read configuration.
+* Read jobs.
+* Request password.
+* Create commands.
+* Execute workflows in parallel.
+* Display final summary.
+
+---
+
+## config.yaml
+
+Stores:
+
+* Environment.
+* Script paths.
+* Command template.
+
+---
+
+## jobs.csv
+
+Stores:
+
+* Workflow names.
+* Execution dates.
+
+---
+
+## logger.py
+
+Handles:
+
+* Log creation.
+* Success/failure messages.
+* Timestamp handling.
+
+---
+
+## requirements.txt
+
+List required Python packages.
+
+Example:
+
+```
+PyYAML
+```
+
+---
+
+# Development Approach
+
+Build this project in phases.
+
+## Phase 1
+
+Create basic structure.
+
+Implement:
+
+* Reading YAML.
+* Reading CSV.
+* Printing generated commands.
+
+Do not execute commands yet.
+
+---
+
+## Phase 2
+
+Add:
+
+* Runtime password input.
+* Single workflow execution.
+* Secure password handling.
+
+---
+
+## Phase 3
+
+Add:
+
+* Multiple workflow support.
+* Parallel execution.
+* Error handling.
+
+---
+
+## Phase 4
+
+Add:
+
+* Logging.
+* Execution summary.
+* Documentation.
+
+---
+
+# Coding Standards
+
+Follow these rules:
+
+* Write clean, readable Python.
+* Add comments explaining logic.
+* Use functions instead of writing everything in one block.
+* Avoid hardcoding paths.
+* Avoid hardcoding workflow names.
+* Keep environment-specific details in config files.
+* Follow production-quality practices.
+* Explain each section of code because the user is learning Python.
+
+---
+
+# Expected Final Output
+
+The final solution should allow me to do:
+
+```bash
+python workflow_runner.py
+```
+
+Then:
+
+```
+Enter IICS Password:
+********
+```
+
+Python should automatically:
+
+1. Read configuration.
+2. Read 40+ workflows from CSV.
+3. Generate pmrun commands.
+4. Execute all workflows simultaneously.
+5. Generate execution logs.
+6. Display final execution summary.
+
+---
+
+**Important:** Before generating the final production code, explain the architecture and implementation approach first. Then provide code file-by-file with explanations. Do not provide only code without explaining how each component works.
