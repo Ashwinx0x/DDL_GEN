@@ -1,0 +1,64 @@
+Then you're in a very good position. Since the **stage table contains the exact same ID → DK mappings that exist in your production target table**, you can safely rebuild the XREF.
+
+### Recommended approach
+
+1. Reload the historical data into the stage table (with the original ID and DK).
+2. Validate:
+
+   * No duplicate IDs in the stage.
+   * No ID with a different DK than an existing XREF record.
+3. Run a `MERGE` to insert only the missing IDs.
+4. Validate the XREF row count and spot-check a few records.
+
+### Production-safe MERGE
+
+```sql
+MERGE `project.dataset.XREF` T
+USING (
+  SELECT DISTINCT ID, DK
+  FROM `project.dataset.STG_HISTORY`
+) S
+ON T.ID = S.ID
+
+WHEN NOT MATCHED THEN
+INSERT (
+  ID,
+  DK,
+  SOURCE_TABLE,
+  DW_EFF_DT
+)
+VALUES (
+  S.ID,
+  S.DK,
+  'CUSTOMER',      -- Replace with your source table name
+  CURRENT_DATE()
+);
+```
+
+Since `ID` is globally unique:
+
+* ✅ Existing IDs in XREF are ignored.
+* ✅ Missing historical IDs are inserted.
+* ✅ If today's ETL has already inserted some IDs into XREF, they won't be inserted again.
+* ✅ The script is **idempotent**—you can rerun it safely if needed.
+
+### One extra safeguard
+
+Before the MERGE, run this query:
+
+```sql
+SELECT
+  s.ID,
+  s.DK AS STAGE_DK,
+  x.DK AS XREF_DK
+FROM `project.dataset.STG_HISTORY` s
+JOIN `project.dataset.XREF` x
+  ON s.ID = x.ID
+WHERE s.DK <> x.DK;
+```
+
+This should return **zero rows**. If it does, you can be confident that no existing ID has a conflicting DK mapping.
+
+---
+
+Based on everything you've described, this is the approach I would use in production. It's simple, safe, rerunnable, and aligns with BigQuery best practices for backfilling missing XREF data.
