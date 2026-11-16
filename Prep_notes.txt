@@ -1,0 +1,747 @@
+Note1:
+
+GitHub:
+
+https://github.com/GoogleCloudPlatform/python-docs-samples/blob/16de3b44f1a9faeccca5bc1cd8a719afc104dc65/composer/workflows/bq_copy_across_locations.py
+
+*************** create a new BigQuery dataset********
+bq mk customer_data_clean
+
+
+# Import the Cloud Storage library
+from google.cloud import storage
+
+# Function to upload a file to a bucket
+def upload_blob(bucket_name, source_file_name, destination_blob_name):
+   
+    # Create a client to interact with Storage
+    storage_client = storage.Client()
+   
+    # Get the specific bucket
+    bucket = storage_client.bucket(bucket_name)
+   
+    # Define the file's path and name in the bucket
+    blob = bucket.blob(destination_blob_name)
+   
+    # Upload the file from your computer
+    blob.upload_from_filename(source_file_name)
+   
+    # Confirm the upload
+    print(f"File {source_file_name} uploaded to {destination_blob_name} in bucket {bucket_name}.")
+
+
+*******************Load avro file to BQ***************************
+
+./bin/start.sh \
+-- --template=GCSTOBIGQUERY \
+    --gcs.bigquery.input.format="avro" \
+    --gcs.bigquery.input.location="gs://PROJECT_ID" \
+    --gcs.bigquery.input.inferschema="true" \
+    --gcs.bigquery.output.dataset="loadavro" \
+    --gcs.bigquery.output.table="campaigns" \
+    --gcs.bigquery.output.mode=overwrite\
+    --gcs.bigquery.temp.bucket.name="PROJECT_ID-bqtemp"
+
+****************************** view the header and the first 5 records ******************
+gcloud storage cat gs://Project_ID-input-bucket/source/loan_applications.csv | head -n 6
+
+***************command in Cloud Shell to enable the Dataflow and BigQuery APIs:*********
+gcloud services enable dataflow.googleapis.com bigquery.googleapis.com
+
+
+***********************Duplicate removal in Dataflow************************************
+Deduplicate transform will remove duplicats from within the pipeline itself, before the data ever reaches its destination (the sink).
+
+import apache_beam as beam
+from apache_beam.transforms.deduplicate import Deduplicate
+
+# Example PCollection with duplicate records
+with beam.Pipeline() as p:
+    raw_data = p | 'Create' >> beam.Create([
+        {'id': 1, 'value': 'A'},
+        {'id': 2, 'value': 'B'},
+        {'id': 1, 'value': 'A'}, # Duplicate record
+        {'id': 3, 'value': 'C'},
+        {'id': 2, 'value': 'B'}  # Another duplicate
+    ])
+   
+    # Deduplicate based on the 'id' field
+    deduplicated_data = raw_data | 'Deduplicate' >> Deduplicate.by(lambda row: row['id'])
+
+    # Log the results
+    deduplicated_data | 'Log' >> beam.Map(print)
+
+*************************Merge in biquery***********
+
+MERGE INTO `<project>.<dataset>.final_table` T
+USING (
+  SELECT *,
+         ROW_NUMBER() OVER (PARTITION BY id ORDER BY timestamp DESC) AS rn
+  FROM `<project>.<dataset>.staging_table`
+) S
+ON T.id = S.id
+WHEN NOT MATCHED BY TARGET AND S.rn = 1 THEN
+  INSERT (id, value, timestamp) VALUES(S.id, S.value, S.timestamp)
+
+
+**************************DAG import and config********************************
+
+import pendulum
+
+from airflow import DAG
+from airflow.models.variable import Variable
+from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobOperator
+from airflow.providers.google.cloud.operators.dataflow import DataflowTemplatedJobStartOperator
+from airflow.providers.google.cloud.operators.dataproc import DataprocSubmitJobOperator
+
+--- CONFIGURATION ---
+GCP_PROJECT_ID = Variable.get("gcp_project_id")
+GCP_REGION = Variable.get("gcp_region", default_var="us-central1")
+GCS_BUCKET = Variable.get("gcp_bucket")
+# Dataflow Template details for raw transaction validation
+DATAFLOW_TEMPLATE_PATH = f"gs://dataflow-templates-{GCP_REGION}/latest/GCS_Text_to_BigQuery"
+DATAFLOW_PY_TRANSFORM = f"gs://{GCS_BUCKET}/dataflow/transforms/validate_transactions.py"
+# Serverless Spark PySpark file for aggregation
+SPARK_AGG_SCRIPT = f"gs://{GCS_BUCKET}/spark/aggregate_sales.py"
+# BigQuery dataset and tables
+BQ_DATASET = "cymbal_financials"
+BQ_RAW_TABLE = "raw_transactions"
+BQ_AGG_TABLE = "daily_aggregated_sales"
+BQ_FINAL_REPORT_TABLE = "daily_sales_report"
+
+
+*****************************DAG DEFINITION*********************************
+dag_id: A unique identifier for the DAG across the entire Airflow environment.
+
+start_date: The date from which the DAG is eligible to run.
+
+schedule: Defines when the DAG should run. @daily is a preset for once a day, but you can also use cron expressions (e.g., '0 5 * * *' for 5:00 AM daily).
+
+catchup=False: This is an important setting. If set to True, Airflow would try to run the DAG for all the missed schedules between the start_date and today. We set it to False to only run for the current schedule.
+
+default_args: These are parameters that will be applied to every task in the DAG, reducing repetitive code. Here, we specify that each task should be retried twice upon failure, with a 5-minute delay between retries.
+
+--- DAG DEFINITION ---
+with DAG(
+    dag_id="cymbal_financial_daily_processing",
+    start_date=pendulum.datetime(2023, 1, 1, tz="UTC"),
+    schedule="@daily",
+    catchup=False,
+    tags=["cymbal_superstore", "dataflow", "spark"],
+    default_args={
+        "owner": "Cymbal Data Engineering",
+        "retries": 2,
+        "retry_delay": pendulum.duration(minutes=5),
+    },
+) as dag:
+
+*********DAG (Directed Acyclic Graph)****
+Project ID, Region, Task Name,start time schedule interval
+
+
+load_staging = GCSToBigQueryOperator(
+task_id="load_staging_bq",
+bucket="sales-data-bucket",
+source_objects=["customer/customer.csv"],
+destination_project_dataset_table="project.staging.customer_stg",
+write_disposition="WRITE_TRUNCATE",
+source_format="CSV",
+skip_leading_rows=1
+)
+
+
+A table column A: 1,1,2,2,3,4,null and B table b column: 1,2,2,5,6,null,null
+
+ISNULL() accepts only 2 arguments.
+COALESCE() accepts multiple arguments.
+
+gcloud pubsub subscriptions create orders-sub \
+  --topic=orders-topic \
+  --dead-letter-topic=orders-dlq \
+  --max-delivery-attempts=5
+
+
+a=[1,1,2,2,3,4,5,5]
+duplicate=set()
+seen=set()
+for i in a:
+if i in seen:
+duplicate.add(i)
+else:
+seen.add(i)
+Print(duplicate)
+
+
+What is a Recursive CTE?
+
+A Recursive CTE is a Common Table Expression that references itself. It consists of an anchor query and a recursive query connected by UNION ALL. The recursive query keeps executing using the previous result set until no new rows are returned. It is commonly used for hierarchical data such as employee-manager relationships, organizational trees, category hierarchies, and sequence generation.
+
+======================================================
+Note 2:GCP automation and orchestartion:-
+1. Cloud Scheduler
+2. Cloud Composer
+3. Cloud Run functions
+4. Eventarc
+
+
+https://airflow.apache.org/docs/apache-airflow/1.10.15/concepts.html
+
+DAG - A Directed Acyclic Graph is a collection of tasks, organized to reflect their relationships and dependencies.
+
+Operator - The description of a single task, it is usually atomic. For example, the BashOperator is used to execute bash command.
+
+Task - A parameterised instance of an Operator; a node in the DAG.
+
+Task Instance - A specific run of a task; characterized as: a DAG, a Task, and a point in time. It has an indicative state: running, success, failed, skipped,
+
+Creating a virtual environment:--
+--------------------------------
+
+sudo apt-get install -y virtualenv
+python3 -m venv venv
+source venv/bin/activate
+
+
+Create a variable for the DAGs Cloud Storage bucket:-
+----------------------------------------------------
+DAGS_BUCKET=us-central1-composer-advanc-6af2c087-bucket
+
+Set Airflow variables:- it will create in Airflow
+-----------------------
+gcloud composer environments run composer-advanced-lab \
+--location us-central1 variables -- \
+set table_list_file_path /home/airflow/gcs/dags/bq_copy_eu_to_us_sample.csv
+
+gcloud composer environments run composer-advanced-lab \
+--location us-central1 variables -- \
+set gcs_source_bucket qwiklabs-gcp-01-395e93213ca9-us
+
+gcloud composer environments run composer-advanced-lab \
+--location us-central1 variables -- \
+set gcs_dest_bucket qwiklabs-gcp-01-395e93213ca9-eu
+
+To see the value of a variable:-
+--------------------------------
+gcloud composer environments run composer-advanced-lab \
+    --location us-central1 variables -- \
+    get gcs_source_bucket
+Result:- qwiklabs-gcp-01-395e93213ca9-us
+
+Upload the DAG and dependencies to Cloud Storage:-
+---------------------------------------------------
+1. Copy the Google Cloud Python docs samples files into your Cloud shell
+cd ~
+gcloud storage cp -r gs://spls/gsp283/python-docs-samples .
+
+2. Upload a copy of the third party hook and operator to the plugins folder of your Composer DAGs Cloud Storage bucket:
+gcloud storage cp -r python-docs-samples/third_party/apache-airflow/plugins/* gs://$DAGS_BUCKET/plugins
+
+3. Next, upload the DAG and config file to the DAGs Cloud Storage bucket of your environment:
+gcloud storage cp python-docs-samples/composer/workflows/bq_copy_across_locations.py gs://$DAGS_BUCKET/dags
+gcloud storage cp python-docs-samples/composer/workflows/bq_copy_eu_to_us_sample.csv gs://$DAGS_BUCKET/dags
+
+
+====================================================
+Note3:
+****Reverse String*****
+a='Ramana'
+b=a[::-1]
+print(b)
+
+a='Ramana'
+rev=""
+for i in a:
+    rev=i+rev
+print(rev)
+---------------------
+****Reverse list String with value*****
+a=["Ramana","Sanjay"]
+rev=[b[::-1] for b in a[::-1]]
+print(rev)
+------------------------
+Fact:
+
+n=int(input('Enter num:'))
+fact=1
+for i in range(1,n+1):
+    fact=fact*i
+print(fact)
+
+---------------------
+Odd or even:
+n=int(input('Enter num:'))
+if n%2==0:
+    print("Even")
+else:
+    print("Odd")
+--------------------
+financi:
+a,b=0,1
+for i in range(10):
+    print(a,end=",")
+    a,b=b, a+b
+
+-------------------
+Polindrome:
+
+a="MadaM"
+if a==a[::-1]:
+    print("Polindrome")
+else:
+    print("Not")
+
+-------------------
+Prime
+n=6
+if n<=1:
+    False
+for i in range(2,n):
+    if n%i==0:
+        print('NP')
+        break
+else:
+    print('P')
+
+-------------------
+a=[1,1,2,2,3,4,5,5]
+duplicate=set()
+seen=set()
+for i in a:
+if i in seen:
+duplicate.add(i)
+else:
+seen.add(i)
+Print(duplicate)
+
+-----------------
+
+number=[10,40,90,30,15]
+largest=numbers[0]
+for i in numbers:
+if i>numbers:
+largest=n
+print(largest)
+
+-------------Retrive Data from json----
+import json
+with open("file.json", "r") as file:
+records=json,load(file)
+for i in records:
+print(i["id"],i["name"])
+
+
+import json
+
+with open("filename.json", "r") as file:
+    data = json.load(file)
+
+    for i in data:
+        print(i["id"], i["name"])
+
+-----------------------------------
+result = dict(sorted(data.items(),
+                     key=lambda x: x[1],
+                     reverse=True))
+
+print(result)
+
+-----------------------------------
+import apache_beam as beam
+import json
+from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.io.gcp.bigquery import WriteToBigQuery
+
+PROJECT_ID = "my-project"
+SUBSCRIPTION = "projects/my-project/subscriptions/my-sub"
+TABLE_ID = "my-project:dataset.customer"
+
+class ParseMessage(beam.DoFn):
+    def process(self, element):
+        yield json.loads(element.decode("utf-8"))
+
+pipeline_options = PipelineOptions(
+    streaming=True,
+    save_main_session=True
+)
+
+with beam.Pipeline(options=pipeline_options) as p:
+
+    (
+        p
+        | "Read From PubSub" >> beam.io.ReadFromPubSub(
+            subscription=SUBSCRIPTION
+        )
+        | "Parse JSON" >> beam.ParDo(ParseMessage())
+        | "Write To BQ" >> WriteToBigQuery(
+            TABLE_ID,
+            write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
+            create_disposition=beam.io.BigQueryDisposition.CREATE_IF_
+
+
+==========================================
+Note4:
+********BQ**************
+View and materilalized view
+Star schema, snowflake schema?
+dim and Fact, where u will use?
+how u will delete more then 7 days of data in bq
+what Normalization and Denormalization
+how you will remove duplicates in bq.
+Native table External table? which one will be more cost?.
+what is the windows functions
+i want emp_no who has third max salary for each dept, don't use windows function
+how to add extra column in bq table. How it will be affect the row. Can we add NOT NULL constraint?
+How to find deleted rows in bq?
+I have only column name but i want to know table name in bq, how to get table name?
+The file is in my local, how to add it in bq. How we can do for json file?
+If the user want to view the data in bq, which IAM policy you will give?
+for service account which policy you will give?
+SCD type 1 vs type2
+Upstream sending more columns but downstream only required what is has already, what u will do?
+what is OLTP and OLAP?
+
+
+
+********************Composer DAG*****************
+Write dag
+what is catchup?
+how to create dependency for tasks?
+task 3 and 4 should run parallel after task 1 and 2 completes.
+how to retry the dag?
+How do you restart a failed DAG?
+I want to send a email alert after 3 retries, how?
+how u will pass communication two different dag?
+what is retry_exponential_backoff?
+How you implemented python in your DAG?
+what and all colors that in dag?
+how you will call dataflow job in dag?
+How do you trigger one DAG from another?
+I want to see log for last 30 days dag run, is it possible? how?
+trigger rule how u will specify
+********************Pub/Sub*****************
+What is pub/sub?
+Pub/sub vs Kafka?
+how subscriber ack the message.
+What if ACK is not sent?
+what dead letter queue(DLQ)?
+dead letter queue contains data?
+how do process dead letter queue messages?
+how to manage duplicate messages if subscriber pull the messages?
+100 messages in topic, when i retry only 7 messages coming why?
+100 messages in topic, i retried two times, each time 7 messages only receiving, how to process remaining 93 message?
+
+Python:
+List vs Tuple Vs array?
+lambda function
+
+
+Git Questions
+1. Difference between Merge and Rebase?
+2. What is Cherry-Pick?
+3. What is Stash?
+4. How do you resolve merge conflicts?
+5. What is HEAD?
+6. Difference between Fetch and Pull?
+7. How do you revert a commit?
+8. Difference between Reset and Revert?
+9. What is a Pull Request?
+10. Explain your Git branching strategy.
+what is github- cherry-pick? code for this?
+
+
+dataform
+
+Dataflow vs dataproc, where u will use?
+Dataflow = Serverless data processing service based on Apache Beam
+Dataproc = Managed cluster service for Spark, Hadoop, Hive, Pig, HBase
+
+What is a PCollection in Dataflow?
+what are the transformations in dataflow?
+ParDo
+Windowing
+What is Watermark?
+Triggers
+Fault Tolerance
+What happens if a Dataflow worker fails?
+
+================================================
+Note 5:
+MERGE target_table_name t
+USING source_table_name s
+on t.id=s.id
+when matched and t.loc<>s.loc then
+update set t.loc=s.loc
+when not matched by t then
+insert into (id,loc) values (s.id,s.loc)
+when not matched by s then
+delete;
+
+
+
+
+
+------------------
+pcollection | beam.filter
+
+Windowing is a technique used to divide data into finite chunks (windows) based on time, so that streaming data can be processed and aggregated.
+
+Watermark is Dataflow's estimate of event-time progress, used to decide when a window is complete and ready for processing.
+A timestamp that indicates Dataflow believes all events earlier than that time have likely arrived.
+
+DoFn:-
+DoFn is a user-defined function for processing each element.
+class UpperCaseFn(beam.DoFn):
+def process(self, element):
+yield element.upper()
+records | beam.ParDo(UpperCaseFn())
+
+
+class uppercase(beam.DoFn):
+def process(self, element):
+yield element.upper()
+record | beam.ParDo(uppercase())
+
+records | beam.Map(lambda x: x.upper())
+
+=============================================
+Note6:
+min 8 char 1 upper case, 1c lower case , 1 digit, 1 special case
+
+
+
+def is_valid_password(password):
+    if len(password) < 8:
+        return False
+
+    has_upper = any(c.isupper() for c in password)
+    has_lower = any(c.islower() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_special = any(not c.isalnum() for c in password)
+
+    return has_upper and has_lower and has_digit and has_special
+
+Note7:
+Dataflow:
+Dataflow is a fully managed service for executing Apache Beam pipelines for batch and streaming data processing.
+
+
+PCollection:
+PCollection is a distributed dataset in Apache Beam/Dataflow. All transformations consume and produce PCollections.
+
+ParDo:
+ParDo is a Beam transformation used to process each element of a PCollection independently.
+
+Windowing:
+Windowing groups infinite streaming data into finite windows for aggregation and processing.
+Types:
+Fixed Window
+Sliding Window
+Session Window
+
+Watermark:
+Watermark represents Dataflow's estimate of event-time progress and helps determine when windows should close.
+
+Triggers:
+Triggers determine when windowed results should be emitted.
+Examples:
+AfterWatermark
+AfterProcessingTime
+AfterCount
+
+Dataflow Auto Scaling work?
+Dataflow automatically:
+Adds workers when load increases
+Removes workers when load decreases
+
+Dynamic Work Rebalancing?
+Dataflow redistributes work among workers to avoid bottlenecks.
+
+Fusion?
+Fusion combines multiple transforms into a single execution stage to reduce overhead
+
+Shuffle?
+Data movement between workers.
+
+PTransform:
+PTransform (Parallel Transform) is an operation or processing logic that transforms one PCollection into another PCollection.
+
+DoFn:-
+DoFn is a user-defined function for processing each element.
+class UpperCaseFn(beam.DoFn):
+def process(self, element):
+yield element.upper()
+records | beam.ParDo(UpperCaseFn())
+
+Map:
+records | beam.Map(lambda x: x.upper())
+
+Window:
+| beam.WindowInto(
+beam.window.SlidingWindows(
+60,
+10
+)
+)
+
+
+---Pubsub to BQ---
+with beam.Pipeline(options=options) as p:
+
+    (
+        p
+        | "Read" >> beam.io.ReadFromPubSub(...)
+        | "Transform" >> beam.ParDo(MyDoFn())
+        | "Write" >> beam.io.WriteToBigQuery(...)
+    )
+
+--JSON--
+class ParseJson(beam.DoFn):
+
+    def process(self, element):
+
+        record = json.loads(element.decode())
+
+        yield {
+            "order_id": record["order_id"],
+            "customer_name": record["customer"]["name"],
+            "city": record["customer"]["city"]
+        }
+
+a='ramana'
+freq={}
+for i in a:
+  freq[i]=freq.get(i,0)+1
+print(freq)
+
+=======================================
+Note8:
+Cloud SQL:
+Cloud SQL is GCP's managed relational database service supporting MySQL, PostgreSQL, and SQL Server.
+
+Cloud Run:
+Cloud Run is a serverless platform that runs containerized applications without managing infrastructure.
+
+
+
+✅ BigQuery
+✅ Dataflow
+✅ Pub/Sub
+✅ Cloud Composer (Airflow)
+✅ Dataproc/PySpark
+✅ IAM & Service Accounts
+✅ SCD Type 1 & 2
+✅ Data Warehouse Concepts
+✅ SQL Scenario-Based Questions
+✅ End-to-End Architecture Explanation.
+
+SELECT * FROM customer_table
+QUALIFY ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY update_timestamp DESC) = 1;
+
+
+{
+"rule": [{
+"action": {"type": "Delete"},
+"condition": {"age": 30}
+}]
+}
+
+
+Star Schema:
+One Fact Table in the center
+Multiple Dimension Tables surrounding it.
+
+
+Snowflake Schema:
+A Snowflake Schema is a data warehouse design where the Fact Table is connected to Dimension Tables, and those dimension tables are further normalized into additional related tables.
+It is called a Snowflake schema because the structure resembles a snowflake with branches extending from dimensions.
+
+Fact Table:
+Stores measurable business data (facts).
+
+Dimension Tables:
+Stores descriptive information.
+
+Surrogate Key?
+Artificial key generated by the system.
+
+Natural Key?
+Business-generated key.
+
+Composite Key?
+Combination of multiple columns.
+
+Data Lake?
+Stores raw structured, semi-structured, and unstructured data.
+
+Terraform is an Infrastructure as Code tool used to provision and manage cloud resources such as BigQuery datasets, GCS buckets, VMs, networks, and Cloud Composer environments using declarative configuration files
+
+1. terraform init
+Downloads provider plugins.
+
+2. terraform plan
+Shows what changes Terraform will make.
+
+3. terraform apply
+Creates or updates resources.
+
+4. terraform destroy
+Deletes resources.
+
+provider "google" {
+  project = "my-project"
+  region  = "us-central1"
+}
+
+resource "google_storage_bucket" "bucket" {
+  name     = "my-demo-bucket"
+  location = "US"
+}
+
+Why is tfstate important?
+Answer: Terraform uses the state file to know which resources already exist and what changes need to be applied.
+
+
+
+
+
+===============================
+Note9:
+
+a='banana'
+freq{}
+
+for i in a:
+freq[i]=freq.get(i,0)+1
+print(freq)
+
+
+for i in a:
+fred[i]=freq.get(i,0)+1
+
+
+select *,dense_rank()over(order by sal desc) as rnk from table where rnk=2
+
+select max(sal) from table where sal<(select max(sal) from table)
+
+
+a='ramana'
+freq={}
+for i in a:
+freq[i]=freq.get(i,0)+1
+print(freq)
+
+n=int(input("Enter num:"))
+a,b=0,1
+for in range(n):
+print(a, end=",")
+a,b=b,a+b
+
+n=6
+if n<=1:
+return False
+for i in range(2,n):
+if n%1==0:
+print("NP")
+else:
+print("P")
+
