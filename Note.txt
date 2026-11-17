@@ -1,0 +1,1 @@
+Read my GCP_Data_Engineering_Learning_Context.md file. Understand my background and learning objectives. Start Phase 0, Lesson 1. Teach me from absolute fundamentals and guide me through my first Python program. Don't skip explanations or give me exercises' answers before I attempt them.
