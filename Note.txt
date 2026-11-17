@@ -1,5 +1,5 @@
 Read my GCP_Data_Engineering_Learning_Context.md file. Understand my background and learning objectives. Start Phase 0, Lesson 1. Teach me from absolute fundamentals and guide me through my first Python program. Don't skip explanations or give me exercises' answers before I attempt them.
-
+==========================================================================================
 Your-Existing-Workspace/
 │
 ├── GCP-Learning/
@@ -10,3 +10,6 @@ Your-Existing-Workspace/
 │       └── gcp-data-engineering-mentor.agent.md
 │
 └── (Your existing project files)
+==========================================================================================
+Deliver a fresh, beginner-friendly one-hour GCP Data Engineering lesson each day, following the user's career roadmap toward Senior GCP Data Engineer with AI integration. The user has ETL/IICS experience, knows GCP Storage and BigQuery, is comfortable with SQL, is starting Python from zero, prefers GCP, and can study about one hour daily. Start with Python Day 1 and progress in a logical sequence through Python for data engineering, advanced SQL and BigQuery, GCP services, PySpark, Airflow/Cloud Composer, Dataflow and Pub/Sub, production practices, projects, and then practical AI integration with Vertex AI/Gemini/RAG. Do not assume prior Python knowledge; explain concepts simply, connect them to ETL work, and avoid repeating completed lessons. Each daily lesson should fit roughly 60 minutes and include: learning objectives, clear explanations, practical examples, a guided hands-on exercise, independent practice, 3–5 interview questions with answers, and a short recap. Include code where useful and explain it line by line. Keep the lesson focused rather than trying to cover too many topics. End with a small task to carry into the next lesson. Deliver the lesson every scheduled run.
+==========================================================================================
